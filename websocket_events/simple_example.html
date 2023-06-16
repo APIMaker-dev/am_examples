@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>WS Test</title>
+    <style>
+        body {
+            background-color: #1b1e20;
+            color: white;
+        }
+
+        .small {
+            font-size: x-small;
+        }
+    </style>
+</head>
+
+<body>
+    <div style="padding: 10px; text-align: center;">
+        <h1>Websocket events in API Maker</h1>
+        <h5>Open console for logs. Press F12</h6>
+    </div>
+</body>
+
+<script>
+    let ws;
+    let am_authorization;
+    const registeredEvents = [];
+
+    async function main() {
+        const tokenObj = await getAMAuthorizationToken();
+        am_authorization = tokenObj.data.token;
+        console.log(am_authorization);
+        connectToWS();
+    }
+    main();
+
+    async function getAMAuthorizationToken() {
+        var myHeaders = new Headers();
+        myHeaders.append("content-type", "application/json");
+
+        var raw = JSON.stringify({
+            "authTokenType": "AM",
+            "authTokenAM": {
+                "u": "default",
+                "p": "12345"
+            }
+        });
+
+        var requestOptions = {
+            method: 'POST',
+            headers: myHeaders,
+            body: raw,
+            redirect: 'follow'
+        };
+
+        const resp = await fetch("http://server1.apimaker.dev/api/system-api/admin/token", requestOptions)
+            .then(response => response.json());
+        return resp;
+    }
+
+    async function connectToWS() {
+        ws = new WebSocket(`ws://server1.apimaker.dev:38245?x-am-authorization=${am_authorization}`);
+
+        ws.onmessage = function (event) {
+            const serverResp = JSON.parse(event.data);
+            console.log(serverResp);
+
+            if (serverResp.type === 'CONNECTED' && serverResp.response.connected) sendRegisterEvent();
+            if (serverResp?.response?.validOnEvents?.length) {
+                for (const validEvent of serverResp.response.validOnEvents) {
+                    registeredEvents.push(validEvent);
+                }
+                console.log(registeredEvents);
+            }
+        };
+
+        ws.onclose = async function (event) {
+            await sleep(2000);
+            console.log('Connection closed.');
+            await connectToWS();
+        };
+    }
+
+    function sendRegisterEvent() {
+        send({
+            objType: 'REGISTER',
+            onEvents: [
+                {
+                    eventType: 'INSTANCES',
+
+                    apiPath: 'admin',
+                    instance: 'mysql8',
+                    database: 'inventory',
+                    collection: 'notifications',
+                    apiName: 'SCHEMA_POST_BULK_INSERT',
+                    getEventData: true,
+                }
+            ],
+        });
+
+        setTimeout(() => {
+            send({
+                objType: 'UNREGISTER',
+                onEvents: [registeredEvents[0].eventId],
+            });
+        }, 5000);
+    }
+
+    function send(data) {
+        ws.send(JSON.stringify(data));
+    }
+
+    async function sleep(timeMS) {
+        await new Promise((resolve) => setTimeout(resolve, timeMS));
+    }
+
+</script>
+
+
+</html>
